@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>LANチャット</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+</head>
+<body>
+  <div id="login">
+    <h2>ユーザー名を入力してください</h2>
+    <input type="text" id="username">
+    <button id="loginButton">開始</button>
+  </div>
+
+  <div id="chat" style="display:none;">
+    <div id="chat-box"></div>
+    <input type="text" id="message">
+    <button onclick="sendMessage()">送信</button>
+    <button onclick="logout()">ログアウト</button>
+    <button onclick="changeUsername()">名前変更</button>
+  </div>
+
+  <script>
+    const socket = io();
+    let username = localStorage.getItem('chatUsername') || "";
+
+    function loginHandler() {
+      username = document.getElementById("username").value.trim();
+      if (username) {
+        localStorage.setItem('chatUsername', username);
+        document.getElementById("login").style.display = "none";
+        document.getElementById("chat").style.display = "block";
+      }
+    }
+
+    document.getElementById("loginButton").addEventListener("click", loginHandler);
+
+    function logout() {
+      localStorage.removeItem('chatUsername');
+      location.reload();
+    }
+
+    function changeUsername() {
+      const newName = prompt("新しい名前を入力:", username);
+      if (newName) {
+        username = newName;
+        localStorage.setItem('chatUsername', username);
+      }
+    }
+
+    function sendMessage() {
+      const msg = document.getElementById("message").value.trim();
+      if (msg) {
+        socket.emit('message', { user: username, text: msg });
+        document.getElementById("message").value = '';
+      }
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function parseMessageText(text) {
+      const urlPattern = /(https?:\/\/[^\x00-\x20"<>]*)/g;
+      return text.split(urlPattern).map(segment => {
+        if (segment.match(urlPattern)) {
+          return `<a href="${segment}" target="_blank" class="chat-link" data-url="${segment}">${segment}</a>`;
+        } else {
+          return escapeHTML(segment);
+        }
+      }).join('');
+    }
+
+    socket.on('message', data => {
+      const box = document.getElementById("chat-box");
+      const div = document.createElement("div");
+      div.className = data.user === username ? 'bubble me' : 'bubble you';
+      div.innerHTML = `<b>${escapeHTML(data.user)}</b>: ${parseMessageText(data.text)}`;
+      box.appendChild(div);
+
+      const link = div.querySelector('.chat-link');
+      if (link) fetchPreview(link.dataset.url, div);
+
+      box.scrollTop = box.scrollHeight;
+    });
+
+    function fetchPreview(url, containerDiv) {
+      fetch(`/preview?url=${encodeURIComponent(url)}`)
+        .then(res => res.json())
+        .then(meta => {
+          if (meta.title || meta.description || meta.image) {
+            const preview = document.createElement("div");
+            preview.className = "link-preview";
+            if (meta.image) preview.innerHTML += `<img src="${meta.image}" alt="Preview Image">`;
+            if (meta.title) preview.innerHTML += `<div class="preview-title">${escapeHTML(meta.title)}</div>`;
+            if (meta.description) preview.innerHTML += `<div class="preview-desc">${escapeHTML(meta.description)}</div>`;
+            containerDiv.appendChild(preview);
+          }
+        })
+        .catch(console.error);
+    }
+
+    // 自動ログイン処理
+    if (username) {
+      document.getElementById("username").value = username;
+      loginHandler();
+    }
+  </script>
+</body>
+</html>
